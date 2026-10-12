@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -56,3 +56,46 @@ test("adapter kills canceled browser process and waits for exit", async () => {
     await assert.rejects(pending, /canceled/i);
   } finally { await cleanup(); }
 });
+
+test("cancellation settles when an exited CLI left an inherited output pipe open", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "deeplook-cli-descendant-"));
+  const path = join(directory, "cli.mjs");
+  const pidPath = join(directory, "descendant.pid");
+  await writeFile(path, `
+    import { spawn } from 'node:child_process';
+    import { writeFileSync } from 'node:fs';
+    const descendant = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'],
+      { stdio: ['ignore', 'inherit', 'ignore'] });
+    writeFileSync(${JSON.stringify(pidPath)}, String(descendant.pid));
+    process.exit(0);
+  `);
+  const controller = new AbortController();
+  const pending = createBrowserCliOpener(path)("https://example.com/", 1234, controller.signal);
+  try {
+    await waitForFile(pidPath);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    controller.abort();
+    let deadline: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        assert.rejects(pending, /canceled/i),
+        new Promise((_, reject) => {
+          deadline = setTimeout(() => reject(new Error("Cancellation did not settle.")), 1_000);
+        }),
+      ]);
+    } finally {
+      if (deadline !== undefined) clearTimeout(deadline);
+    }
+  } finally {
+    const pid = Number(await readFile(pidPath, "utf8"));
+    try { process.kill(pid, "SIGKILL"); } catch { /* already stopped */ }
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+async function waitForFile(path: string): Promise<void> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    try { await readFile(path); return; } catch { await new Promise((resolve) => setTimeout(resolve, 10)); }
+  }
+  throw new Error("Fixture CLI did not start its descendant.");
+}

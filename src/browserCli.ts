@@ -25,7 +25,8 @@ export function createBrowserCliOpener(cliPath: string) {
     return new Promise((resolve, reject) => {
       const child = spawn(process.execPath,
         [cliPath, "open", url, "--machine", "--timeout-ms", String(timeoutMs)],
-        { stdio: ["ignore", "pipe", "pipe"], shell: false, windowsHide: true });
+        { stdio: ["ignore", "pipe", "pipe"], shell: false, windowsHide: true,
+          detached: process.platform !== "win32" });
       const stdout: Buffer[] = [];
       let stdoutBytes = 0;
       let stderrBytes = 0;
@@ -33,11 +34,32 @@ export function createBrowserCliOpener(cliPath: string) {
       let tooLarge = false;
       let launchError: Error | undefined;
       let forceKillTimer: NodeJS.Timeout | undefined;
+      let terminationStarted = false;
+
+      const signalGroup = (name: NodeJS.Signals) => {
+        if (process.platform === "win32" || child.pid === undefined) return false;
+        try {
+          process.kill(-child.pid, name);
+          return true;
+        } catch {
+          return false;
+        }
+      };
 
       const terminate = () => {
-        if (child.exitCode !== null || child.signalCode !== null) return;
-        child.kill("SIGTERM");
-        forceKillTimer ??= setTimeout(() => child.kill("SIGKILL"), terminationGraceMs);
+        if (terminationStarted) return;
+        terminationStarted = true;
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill("SIGTERM");
+        } else {
+          signalGroup("SIGTERM");
+        }
+        forceKillTimer = setTimeout(() => {
+          signalGroup("SIGKILL");
+          child.kill("SIGKILL");
+          child.stdout.destroy();
+          child.stderr.destroy();
+        }, terminationGraceMs);
         forceKillTimer.unref();
       };
       const onAbort = () => {
