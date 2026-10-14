@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { createBrowserCliOpener } from "./browserCli.js";
+import { AccountStore } from "./accountStore.js";
 import { readServeConfig } from "./serveConfig.js";
 import { createApiServer } from "./server.js";
 
@@ -13,6 +14,9 @@ try {
 }
 const server = createApiServer(createBrowserCliOpener(config.browserCliPath), {
   authorizationToken: config.authorizationToken,
+  adminToken: config.adminToken,
+  accountStore: config.adminToken === undefined ? undefined : new AccountStore(config.dataDir),
+  maxConcurrent: config.maxConcurrent,
 });
 
 server.listen(config.port, config.host, () => {

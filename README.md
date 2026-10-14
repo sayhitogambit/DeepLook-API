@@ -12,19 +12,46 @@ npm ci && npm run build
 
 cd /path/to/DeepLook-API
 npm ci && npm run build
-DEEPLOOK_CLI_PATH=/path/to/DeepLook/dist/cli.js npm run api
+DEEPLOOK_CLI_PATH=/path/to/DeepLook/dist/cli.js \
+DEEPLOOK_ADMIN_TOKEN=replace-with-a-long-random-secret \
+DEEPLOOK_DATA_DIR=/absolute/path/to/deeplook-data \
+npm run api
 ```
 
-The service listens on `127.0.0.1:47231`. Set `DEEPLOOK_HOST` and `DEEPLOOK_PORT` to change the address. A non-loopback bind requires `DEEPLOOK_API_TOKEN`; clients send `Authorization: Bearer <token>`. Keep the token in the environment and use TLS for remote access. The service checks that the CLI file exists before starting. It does not store credentials or page data.
+The service listens on `127.0.0.1:47231`. Set `DEEPLOOK_HOST` and `DEEPLOOK_PORT` to change the address. `DEEPLOOK_MAX_CONCURRENT` controls the process-wide browser cap (default `2`); account limits can only lower that cap for one tenant. A non-loopback bind requires `DEEPLOOK_API_TOKEN` or `DEEPLOOK_ADMIN_TOKEN`. The service checks that the CLI file exists before starting.
+
+`DEEPLOOK_ADMIN_TOKEN` enables private account management and stores state in `DEEPLOOK_DATA_DIR` (default: `./data`). Browser key plaintext is returned only on creation or rotation. The store retains SHA-256 hashes, account settings, monthly counters, and a capped request log containing hostnames only. Its JSON file is replaced atomically with mode `0600` inside a mode `0700` directory.
 
 ## HTTP contract
 
 - `GET /health` returns `{"ok":true}` while the API process is running.
 - `POST /v1/open` accepts `{"url":"https://example.com","timeoutMs":30000}`. `timeoutMs` is optional and can be 1–120000.
 - Success returns the browser's JSON page object: `requestedUrl`, `finalUrl`, `httpStatus`, `title`, `text`, `truncated`, and `observed` browser details.
-- Errors are JSON with `error` and `message`: `invalid_request` (400), `unauthorized` (401), `challenge` (422), `navigation_failed` (502), `busy` (503), or `timeout` (504). A challenge response can include the final URL, title, and matched marker, but never its page text.
+- Errors are JSON with `error` and `message`: `invalid_request` (400), `unauthorized` (401), `challenge` (422), `quota_exceeded` (429), `navigation_failed` (502), `busy` (503), or `timeout` (504). A challenge response can include the final URL, title, and matched marker, but never its page text.
 
 Only public HTTP(S) URLs on the standard port are accepted. The browser independently checks redirects and resources, pins public DNS answers, and blocks local and metadata addresses. The API can run two opens at once by default, aborts browser work after the deadline or client disconnect, and waits for process cleanup before freeing a slot. Captchas are not solved.
+
+`POST /v1/open` accepts either a named `dlk_` browser key or the optional migration token in `DEEPLOOK_API_TOKEN`. Named keys are attributed to an account and enforce its concurrency and monthly request limits. The static token keeps the original `/v1/open` behavior and is not valid for administrator routes.
+
+## Account management contract
+
+Every management request uses `Authorization: Bearer <DEEPLOOK_ADMIN_TOKEN>`. `externalId` is the stable Nymetric account identifier. All returned tokens, usage, logs, sessions, and pressure are scoped to that path account.
+
+- `PUT /v1/admin/accounts/:externalId` idempotently ensures an account. Body: optional `name` and optional `limits` with `maxConcurrent` and `monthlyRequestQuota`.
+- `GET /v1/admin/accounts/:externalId` returns the account, limits, and current-month usage.
+- `GET|POST /v1/admin/accounts/:externalId/tokens` lists key metadata or creates a named key. Creation returns `{token, secret}` with the secret once.
+- `POST /v1/admin/accounts/:externalId/tokens/:tokenId/rotate` replaces a key and returns its new secret once.
+- `DELETE /v1/admin/accounts/:externalId/tokens/:tokenId` revokes a key and returns `204`.
+- `GET /v1/admin/accounts/:externalId/usage` returns current-month request, success, failure, and remaining counts.
+- `GET /v1/admin/accounts/:externalId/logs?limit=100` returns newest-first request metadata. Logs include request ID, key ID, hostname, timestamps, duration, and status; URL paths, queries, page content, and credentials are never retained.
+- `GET /v1/admin/accounts/:externalId/sessions` lists active browser jobs. `DELETE .../sessions/:sessionId` requests cancellation and returns `202`.
+- `GET /v1/admin/accounts/:externalId/pressure` returns active/concurrency and used/remaining quota counters. `remainingConcurrent` is capped by both the account limit and process-wide capacity.
+
+Account and token identifiers are checked against the account in the URL. A token or active session from another account is returned as `404` through that path.
+
+## Coolify
+
+The production Dockerfile expects the private browser repository as the relative submodule `vendor/deeplook`, runs Chromium and the API as a nonroot user, and persists `/app/data`. See [docs/coolify.md](docs/coolify.md) for repository access, volume, secrets, and smoke checks.
 
 ## Browser process protocol
 

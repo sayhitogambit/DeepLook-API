@@ -1,0 +1,3 @@
+[submodule "vendor/deeplook"]
+	path = vendor/deeplook
+	url = ../DeepLook.git
