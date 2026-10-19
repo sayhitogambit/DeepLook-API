@@ -63,6 +63,33 @@ test("health reports liveness", async () => {
   }
 });
 
+for (const duringValidation of [false, true]) {
+  test(`shutdown rejects admission ${duringValidation ? "during URL validation" : "before a request"}`, async () => {
+    const shutdown = new AbortController();
+    let validationStarted!: () => void;
+    const started = new Promise<void>((resolve) => { validationStarted = resolve; });
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => { release = resolve; });
+    let opens = 0;
+    const options = { shutdownSignal: shutdown.signal, addressResolver: async () => {
+      validationStarted();
+      if (duringValidation) await barrier;
+      return publicResolver("example.com");
+    } };
+    const { server, base } = await listen(async () => { opens++; return samplePage(); }, options);
+    try {
+      if (!duringValidation) shutdown.abort();
+      const request = fetch(`${base}/v1/open`, { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com/" }) });
+      if (duringValidation) { await started; shutdown.abort(); release(); }
+      const response = await request;
+      assert.equal(response.status, 503);
+      assert.equal((await response.json()).error, "busy");
+      assert.equal(opens, 0, "shutdown must not admit a new browser process after asynchronous validation");
+    } finally { release(); await close(server); }
+  });
+}
+
 for (const error of ["access_wall", "empty_content"] as const) {
   test(`HTTP maps browser ${error} to 422 without returning page content`, async () => {
     const { server, base } = await listen(async () => { throw new BrowserCliError(error, "No readable page"); });

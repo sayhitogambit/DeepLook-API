@@ -15,6 +15,7 @@ export type ApiServerOptions = {
   addressResolver?: AddressResolver;
   maxConcurrent?: number;
   launchSlackMs?: number;
+  shutdownSignal?: AbortSignal;
 };
 
 const defaultTimeoutMs = 30_000;
@@ -49,9 +50,17 @@ export function createApiServer(open: PageOpener, options: ApiServerOptions = {}
   const maxConcurrent = options.maxConcurrent ?? 2;
   if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1) throw new Error("maxConcurrent must be a positive integer.");
   const runtime: RuntimeState = { maxConcurrent, active: 0, activeByAccount: new Map(), sessions: new Map() };
-  return createServer((request, response) => {
+  const server = createServer((request, response) => {
     void route(request, response, open, options, runtime).catch(() => sendError(response, "navigation_failed", "Unexpected server error."));
   });
+  const cancelActive = () => {
+    for (const session of runtime.sessions.values()) {
+      session.controller.abort(new Error("The API is shutting down."));
+    }
+  };
+  options.shutdownSignal?.addEventListener("abort", cancelActive, { once: true });
+  server.once("close", () => options.shutdownSignal?.removeEventListener("abort", cancelActive));
+  return server;
 }
 
 async function route(request: IncomingMessage, response: ServerResponse, open: PageOpener, options: ApiServerOptions, runtime: RuntimeState): Promise<void> {
@@ -99,6 +108,9 @@ async function openRoute(request: IncomingMessage, response: ServerResponse, ope
   const usage = identity.externalId === "legacy" || options.accountStore === undefined
     ? { month: new Date().toISOString().slice(0, 7), requests: 0 }
     : await options.accountStore.getUsage(identity.externalId);
+  if (options.shutdownSignal?.aborted) {
+    sendError(response, "busy", "The API is shutting down."); return;
+  }
   const quotaPending = [...runtime.sessions.values()].filter((session) =>
     session.externalId === identity.externalId && session.month === usage.month && session.quotaPending).length;
   if (usage.requests + quotaPending >= identity.limits.monthlyRequestQuota) {

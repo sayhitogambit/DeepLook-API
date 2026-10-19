@@ -68,3 +68,11 @@ For the full HTTP → pinned CLI runner → sandboxed Chrome integration, initia
 `npm run test:container` builds the production image and runs that suite with external networking disabled, the bundled Chromium seccomp profile, restricted capabilities, and resource limits. The Compose example uses the same sandbox settings; see `docs/coolify.md` before deploying.
 
 The optional CI `browser-integration` job is enabled with repository variable `DEEPLOOK_BROWSER_CI_ENABLED=true`. While the engine is private, configure a read-only `DEEPLOOK_ENGINE_READ_TOKEN` with access to both repositories for recursive checkout. Once the engine is public, the default workflow token is sufficient. Keep this job enabled for release validation; a skipped job is not evidence that the browser integration passed.
+
+## Stopping and updating the service
+
+SIGTERM and SIGINT stop accepting HTTP connections, reject pending admissions with `busy`, and cancel active browser requests. The service waits for owned CLI processes to exit, including their existing two-second termination escalation, before completing shutdown. Canceled managed requests are recorded as `canceled`; their admitted request still counts toward usage.
+
+Responses finishing during shutdown close their idle keep-alive connections. Shutdown has an eight-second deadline, including incomplete HTTP bodies and disconnected handlers still awaiting DNS or storage; if draining exceeds it, the service closes connections and terminates itself with SIGKILL, which the supervisor should treat as a failed shutdown. This hard stop also handles native I/O that can prevent `process.exit()` from returning. Orderly shutdown exits 0. Configure the supervisor/container stop grace above eight seconds; the Compose example uses 15 seconds. No credentials or page content are included in shutdown messages.
+
+Process-level tests cover both signals, cleanup of an owned subprocess, a SIGTERM-resistant CLI, incomplete request draining, cancellation attribution persisted to disk, admission interrupted during URL validation, and storage I/O remaining after a client disconnects.
