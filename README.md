@@ -27,9 +27,9 @@ The service listens on `127.0.0.1:47231`. Set `DEEPLOOK_HOST` and `DEEPLOOK_PORT
 - `GET /health` returns `{"ok":true}` while the API process is running.
 - `POST /v1/open` accepts `{"url":"https://example.com","timeoutMs":30000}`. `timeoutMs` is optional and can be 1–120000.
 - Success returns the browser's JSON page object: `requestedUrl`, `finalUrl`, `httpStatus`, `title`, `text`, `truncated`, and `observed` browser details.
-- Errors are JSON with `error` and `message`: `invalid_request` (400), `unauthorized` (401), `challenge` (422), `quota_exceeded` (429), `navigation_failed` (502), `busy` (503), or `timeout` (504). A challenge response can include the final URL, title, and matched marker, but never its page text.
+- Errors are JSON with `error` and `message`: `invalid_request` (400), `unauthorized` (401), `challenge`, `access_wall`, or `empty_content` (422), `quota_exceeded` (429), `navigation_failed` (502), `busy` (503), or `timeout` (504). Page failures can include the final URL, title, and a matched marker, but never their page text. An empty or invisible-only body is an error even if the upstream HTTP status is 200.
 
-Only public HTTP(S) URLs on the standard port are accepted. The browser independently checks redirects and resources, pins public DNS answers, and blocks local and metadata addresses. The API can run two opens at once by default, aborts browser work after the deadline or client disconnect, and waits for process cleanup before freeing a slot. Captchas are not solved.
+Only public HTTP(S) URLs on the standard port are accepted. The browser independently checks redirects and resources, pins public DNS answers, and blocks local and metadata addresses. The API can run two opens at once by default, aborts browser work after the deadline or client disconnect, and waits for process cleanup before freeing a slot. Browser CLI subprocesses receive only required OS settings and the optional `DEEPLOOK_CHROME` path, not the API's secrets or Node injection settings. Captchas are not solved.
 
 `POST /v1/open` accepts either a named `dlk_` browser key or the optional migration token in `DEEPLOOK_API_TOKEN`. Named keys are attributed to an account and enforce its concurrency and monthly request limits. The static token keeps the original `/v1/open` behavior and is not valid for administrator routes.
 
@@ -62,3 +62,9 @@ npm test
 ```
 
 Tests use a fake CLI and local HTTP fixtures. They do not require Chrome, external web access, or real credentials.
+
+For the full HTTP → pinned CLI runner → sandboxed Chrome integration, initialize `vendor/deeplook`, run `npm ci --prefix vendor/deeplook`, then `npm run test:browser`. This suite uses local HTML fixtures and a named test key, checks rendering, challenge/access-gate/empty-content errors, renderer timeout, and account usage attribution. It needs Chrome but no external sites or real credentials.
+
+`npm run test:container` builds the production image and runs that suite with external networking disabled, the bundled Chromium seccomp profile, restricted capabilities, and resource limits. The Compose example uses the same sandbox settings; see `docs/coolify.md` before deploying.
+
+The optional CI `browser-integration` job is enabled with repository variable `DEEPLOOK_BROWSER_CI_ENABLED=true`. While the engine is private, configure a read-only `DEEPLOOK_ENGINE_READ_TOKEN` with access to both repositories for recursive checkout. Once the engine is public, the default workflow token is sufficient. Keep this job enabled for release validation; a skipped job is not evidence that the browser integration passed.

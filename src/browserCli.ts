@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 
 import type { BrowserEnvelope, BrowserErrorCode, OpenedPage } from "./browserProtocol.js";
+import { browserEnvironment } from "./runtimeEnvironment.js";
 
 const maxStdoutBytes = 2_000_000;
 const maxStderrBytes = 8_192;
@@ -26,6 +27,7 @@ export function createBrowserCliOpener(cliPath: string) {
       const child = spawn(process.execPath,
         [cliPath, "open", url, "--machine", "--timeout-ms", String(timeoutMs)],
         { stdio: ["ignore", "pipe", "pipe"], shell: false, windowsHide: true,
+          env: { ...browserEnvironment(), ...(process.env.DEEPLOOK_CHROME ? { DEEPLOOK_CHROME: process.env.DEEPLOOK_CHROME } : {}) },
           detached: process.platform !== "win32" });
       const stdout: Buffer[] = [];
       let stdoutBytes = 0;
@@ -146,6 +148,6 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 function isErrorCode(value: unknown): value is BrowserErrorCode {
-  return value === "challenge" || value === "upstream_http" ||
+  return value === "challenge" || value === "access_wall" || value === "empty_content" || value === "upstream_http" ||
     value === "timeout" || value === "navigation_failed";
 }

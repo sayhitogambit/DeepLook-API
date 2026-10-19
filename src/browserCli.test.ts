@@ -47,6 +47,43 @@ test("adapter rejects malformed output", async () => {
   } finally { await cleanup(); }
 });
 
+for (const error of ["access_wall", "empty_content"] as const) {
+  test(`adapter preserves ${error} from the browser protocol`, async () => {
+    const { path, cleanup } = await fixture(`
+      process.stdout.write(JSON.stringify({version:1,ok:false,error:${JSON.stringify(error)},message:'No readable page'}));
+      process.exitCode = 1;
+    `);
+    try {
+      await assert.rejects(createBrowserCliOpener(path)("https://example.com/", 1234, new AbortController().signal),
+        (cause) => cause instanceof BrowserCliError && cause.code === error);
+    } finally { await cleanup(); }
+  });
+}
+
+test("CLI subprocess does not inherit administration secrets or Node injection settings", async () => {
+  const previousAdmin = process.env.DEEPLOOK_ADMIN_TOKEN;
+  const previousNodeOptions = process.env.NODE_OPTIONS;
+  process.env.DEEPLOOK_ADMIN_TOKEN = "fixture-only-admin-secret";
+  process.env.NODE_OPTIONS = "--require /deeplook-test-missing-module.js";
+  const { path, cleanup } = await fixture(`
+    const sensitive = Object.keys(process.env).filter(key => /TOKEN|SECRET|API_KEY|NODE_OPTIONS|NODE_PATH/.test(key));
+    process.stdout.write(JSON.stringify({version:1,ok:true,page:{
+      requestedUrl:'https://example.com/',finalUrl:'https://example.com/',title:'Environment',text:JSON.stringify(sensitive),truncated:false,
+      observed:{webdriver:false,userAgent:'Chrome',brands:[],languages:['en-US'],timezone:'UTC',viewport:{width:1,height:1}}
+    }}));
+  `);
+  try {
+    const page = await createBrowserCliOpener(path)("https://example.com/", 1234, new AbortController().signal);
+    assert.deepEqual(JSON.parse(page.text), []);
+  } finally {
+    if (previousAdmin === undefined) delete process.env.DEEPLOOK_ADMIN_TOKEN;
+    else process.env.DEEPLOOK_ADMIN_TOKEN = previousAdmin;
+    if (previousNodeOptions === undefined) delete process.env.NODE_OPTIONS;
+    else process.env.NODE_OPTIONS = previousNodeOptions;
+    await cleanup();
+  }
+});
+
 test("adapter kills canceled browser process and waits for exit", async () => {
   const { path, cleanup } = await fixture(`setInterval(() => {}, 1000)`);
   const controller = new AbortController();

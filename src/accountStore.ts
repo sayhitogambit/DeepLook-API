@@ -26,7 +26,7 @@ export type BrowserToken = {
   revokedAt?: string;
   lastUsedAt?: string;
 };
-export type RequestStatus = "succeeded" | "navigation_failed" | "timeout" | "challenge" | "canceled";
+export type RequestStatus = "succeeded" | "navigation_failed" | "timeout" | "challenge" | "access_wall" | "empty_content" | "canceled";
 export type RequestLog = {
   requestId: string;
   tokenId: string;

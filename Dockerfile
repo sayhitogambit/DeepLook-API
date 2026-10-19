@@ -17,7 +17,7 @@ RUN npm run build
 
 FROM node:22-bookworm-slim AS runtime
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends chromium ca-certificates tini fonts-liberation \
+    && apt-get install -y --no-install-recommends chromium chromium-sandbox ca-certificates tini fonts-liberation \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 --shell /usr/sbin/nologin deeplook
 

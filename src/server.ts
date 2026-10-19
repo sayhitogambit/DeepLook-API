@@ -23,7 +23,7 @@ const maxBodyBytes = 65_536;
 const defaultLaunchSlackMs = 20_000;
 const legacyLimits: AccountLimits = { maxConcurrent: 2_147_483_647, monthlyRequestQuota: 2_147_483_647 };
 
-export type ApiErrorCode = "invalid_request" | "navigation_failed" | "timeout" | "challenge" |
+export type ApiErrorCode = "invalid_request" | "navigation_failed" | "timeout" | "challenge" | "access_wall" | "empty_content" |
   "unauthorized" | "busy" | "quota_exceeded" | "not_found";
 
 type ApiErrorBody = { error: ApiErrorCode; message: string; finalUrl?: string; title?: string; marker?: string };
@@ -146,6 +146,13 @@ async function openRoute(request: IncomingMessage, response: ServerResponse, ope
     const problem = pageProblem(page);
     if (problem?.kind === "challenge") { await finish("challenge"); sendError(response, "challenge", "The site returned a bot check instead of the page.", { finalUrl: page.finalUrl, title: page.title, marker: problem.marker }); return; }
     if (problem?.kind === "upstream_http") { await finish("navigation_failed"); sendError(response, "navigation_failed", `Upstream returned HTTP ${problem.status}.`, { finalUrl: page.finalUrl, title: page.title }); return; }
+    if (problem?.kind === "access_wall" || problem?.kind === "empty_content") {
+      await finish(problem.kind);
+      sendError(response, problem.kind,
+        problem.kind === "empty_content" ? "The page returned no readable text." : "The site returned an access gate instead of the requested page.",
+        { finalUrl: page.finalUrl, title: page.title, ...(problem.kind === "access_wall" ? { marker: problem.marker } : {}) });
+      return;
+    }
     await finish("succeeded");
     sendJson(response, 200, page);
   } catch (cause) {
@@ -153,6 +160,11 @@ async function openRoute(request: IncomingMessage, response: ServerResponse, ope
     if (cause instanceof BrowserCliError) {
       if (cause.code === "challenge") { await finish("challenge"); sendError(response, "challenge", cause.message, { finalUrl: cause.finalUrl, title: cause.title, marker: cause.marker }); return; }
       if (cause.code === "timeout") { await finish("timeout"); sendError(response, "timeout", cause.message); return; }
+      if (cause.code === "access_wall" || cause.code === "empty_content") {
+        await finish(cause.code);
+        sendError(response, cause.code, cause.message, { finalUrl: cause.finalUrl, title: cause.title, marker: cause.marker });
+        return;
+      }
       await finish("navigation_failed"); sendError(response, "navigation_failed", cause.message, { finalUrl: cause.finalUrl, title: cause.title }); return;
     }
     if (isTimeout(cause)) { await finish("timeout"); sendError(response, "timeout", message); return; }
@@ -311,6 +323,8 @@ function statusFor(code: ApiErrorCode): number {
     case "navigation_failed": return 502;
     case "timeout": return 504;
     case "challenge": return 422;
+    case "access_wall": return 422;
+    case "empty_content": return 422;
     case "unauthorized": return 401;
     case "quota_exceeded": return 429;
     case "busy": return 503;

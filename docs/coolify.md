@@ -26,6 +26,12 @@ Create one Dockerfile application from the DeepLook API repository.
 
 Use one replica for this milestone. Account data is an atomic local JSON file and active browser sessions live in the process. Multiple replicas would have separate quota counters and cannot cancel each other's sessions.
 
+The pinned browser requires the Chromium sandbox. The image includes Debian's `chromium-sandbox` package. Docker's default seccomp policy can deny the namespace operations Chromium needs: use the bundled `security/playwright-seccomp.json` profile with `security-opt seccomp=<absolute-host-path>`. This preserves syscall filtering while allowing the browser to establish its own sandbox. The profile is the unmodified Playwright v1.56.1 file, SHA-256 `cc3e61cabda6bbc1e53e54d27ba4d55a9d3be829b6dd1a596f4a7b31b1cc7849`, from https://github.com/microsoft/playwright/blob/v1.56.1/utils/docker/seccomp_profile.json. Its Apache-2.0 license is included at `security/PLAYWRIGHT-LICENSE`.
+
+Validate sandboxed startup on the target Docker host before exposing the service. Do not add `--no-sandbox`, run the container privileged, or disable its security profile to make a failing smoke test pass. Chrome's OS environment and the CLI subprocess environment exclude administrator credentials.
+
+`compose.yaml` supplies the seccomp profile, drops capabilities except `SYS_CHROOT`, prevents gaining privileges, limits memory/CPU/processes, persists account state, and publishes only a loopback port for an HTTPS reverse proxy. The upstream profile permits Chromium's sandbox `chroot` syscall only when `SYS_CHROOT` is in the capability bounding set; the service still runs as UID 10001. Supply `DEEPLOOK_ADMIN_TOKEN` through the deployment secret environment before `docker compose up --build`. In Coolify, configure the equivalent container security options, or deploy the Compose resource with the profile available on the host. Validate `npm run test:container` on that host; it runs the full browser fixture suite with external networking disabled and the same security/resource restrictions. A host that still denies user namespaces needs an appropriate host policy before it can serve requests.
+
 Use a named Coolify volume initialized from the image, or make an existing mount writable by UID/GID `10001:10001`. The container deliberately does not start as root, so a root-only bind mount will make account creation fail.
 
 Set these runtime variables:
@@ -62,4 +68,4 @@ curl --fail-with-body -X POST "$DEEPLOOK_URL/v1/admin/accounts/nymetric-owner/to
   --data '{"name":"Nymetric production"}'
 ```
 
-The returned browser key is an end-user credential for `/v1/browser/open`; show or copy it once and store it only in the calling application. Nymetric does not need this key in its runtime environment. Later token-list responses contain metadata only.
+The returned browser key is an end-user credential for this API's `POST /v1/open`; show or copy it once and store it only in the calling application. Nymetric's separate gateway may expose its own route; it is not a route of this service. Nymetric does not need this key in its runtime environment. Later token-list responses contain metadata only.

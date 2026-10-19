@@ -7,6 +7,7 @@ import type { OpenedPage } from "./browserProtocol.js";
 import { pageProblem } from "./pageResult.js";
 import type { AddressResolver } from "./security.js";
 import { createApiServer, type ApiServerOptions, type PageOpener } from "./server.js";
+import { BrowserCliError } from "./browserCli.js";
 
 const publicResolver: AddressResolver = async () => [{ address: "93.184.216.34", family: 4 }];
 
@@ -59,6 +60,36 @@ test("health reports liveness", async () => {
     assert.deepEqual(await response.json(), { ok: true });
   } finally {
     await close(server);
+  }
+});
+
+for (const error of ["access_wall", "empty_content"] as const) {
+  test(`HTTP maps browser ${error} to 422 without returning page content`, async () => {
+    const { server, base } = await listen(async () => { throw new BrowserCliError(error, "No readable page"); });
+    try {
+      const response = await fetch(`${base}/v1/open`, { method: "POST",
+        headers: { "content-type": "application/json" }, body: JSON.stringify({ url: "https://example.com/" }) });
+      assert.equal(response.status, 422);
+      assert.deepEqual(await response.json(), { error, message: "No readable page" });
+    } finally { await close(server); }
+  });
+}
+
+test("HTTP reclassifies empty content and access gates even from a legacy opener", async () => {
+  for (const value of [
+    { text: "\u200b".repeat(300), error: "empty_content" },
+    { text: "Click the button below to continue shopping\nContinue shopping\nConditions of Use", error: "access_wall" },
+    { text: "Prove your humanity\nComplete the challenge below", error: "challenge" },
+  ]) {
+    const { server, base } = await listen(async () => samplePage({ text: value.text }));
+    try {
+      const response = await fetch(`${base}/v1/open`, { method: "POST",
+        headers: { "content-type": "application/json" }, body: JSON.stringify({ url: "https://example.com/" }) });
+      assert.equal(response.status, 422);
+      const body = await response.json();
+      assert.equal(body.error, value.error);
+      assert.equal(body.text, undefined);
+    } finally { await close(server); }
   }
 });
 

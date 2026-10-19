@@ -4,9 +4,17 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   api:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -16,3 +24,27 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+
+  browser-integration:
+    if: ${{ vars.DEEPLOOK_BROWSER_CI_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.DEEPLOOK_ENGINE_READ_TOKEN || github.token }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            vendor/deeplook/package-lock.json
+      - run: npm ci
+      - run: npm ci --prefix vendor/deeplook
+      - run: vendor/deeplook/node_modules/.bin/playwright-core install --with-deps chrome
+      - run: npm run test:browser
+        env:
+          DEEPLOOK_CHROME: /usr/bin/google-chrome
+      - run: npm run test:container

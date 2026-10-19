@@ -15,7 +15,7 @@ export type OpenedPage = {
   };
 };
 
-export type BrowserErrorCode = "challenge" | "upstream_http" | "timeout" | "navigation_failed";
+export type BrowserErrorCode = "challenge" | "access_wall" | "empty_content" | "upstream_http" | "timeout" | "navigation_failed";
 
 export type BrowserEnvelope =
   | { version: 1; ok: true; page: OpenedPage }
