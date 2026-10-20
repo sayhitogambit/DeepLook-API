@@ -22,6 +22,7 @@ RUN apt-get update \
     && useradd --create-home --uid 10001 --shell /usr/sbin/nologin deeplook
 
 WORKDIR /app
+COPY LICENSE NOTICE THIRD_PARTY_NOTICES.md ./
 COPY --from=api-build --chown=deeplook:deeplook /build/api/dist ./dist
 COPY --from=browser-build --chown=deeplook:deeplook /build/deeplook/dist ./vendor/deeplook/dist
 COPY --from=browser-build --chown=deeplook:deeplook /build/deeplook/node_modules ./vendor/deeplook/node_modules

@@ -2,7 +2,7 @@
   "name": "deeplook-api",
   "version": "0.1.0",
   "private": true,
-  "description": "HTTP adapter for the private DeepLook browser CLI.",
+  "description": "Self-hosted HTTP API for the open-source DeepLook browser CLI.",
   "type": "module",
   "scripts": {
     "build": "tsc",
@@ -17,5 +17,15 @@
   "devDependencies": {
     "@types/node": "22.19.0",
     "typescript": "5.9.3"
+  },
+  "license": "Apache-2.0",
+  "author": "DeepLook contributors",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sayhitogambit/DeepLook-API.git"
+  },
+  "homepage": "https://github.com/sayhitogambit/DeepLook-API#readme",
+  "bugs": {
+    "url": "https://github.com/sayhitogambit/DeepLook-API/issues"
   }
 }
