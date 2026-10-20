@@ -2,6 +2,10 @@
 
 This image builds the API repository and the public [DeepLook browser repository](https://github.com/sayhitogambit/DeepLook) as separate projects. The browser is pinned as the Git submodule `vendor/deeplook`; its source is not copied into this repository. Deployment builds from source and does not require a published npm package.
 
+## Coolify Compose option
+
+For Coolify versions whose custom Docker option parser truncates hyphenated security values, use the Docker Compose build pack with `/compose.coolify.yaml`. It builds the same pinned browser/API source, keeps the Chromium sandbox and security/resource restrictions from `compose.yaml`, and exposes port 47231 only to the proxy network. Assign `https://api.your-domain.example` to the `api` service in Coolify; keep one replica and the persistent `data` volume. The optional legacy demo token is supplied only through runtime variables. This avoids weakening the sandbox to accommodate a platform parser bug.
+
 ## Repository preparation
 
 Clone the public API repository recursively:
