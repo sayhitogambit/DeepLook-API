@@ -82,7 +82,7 @@ For the full HTTP → pinned CLI runner → sandboxed Chrome integration, initia
 
 `npm run test:container` builds the production image and runs that suite with external networking disabled, the bundled Chromium seccomp profile, restricted capabilities, and resource limits. The Compose example uses the same sandbox settings; see `docs/coolify.md` before deploying.
 
-The optional CI `browser-integration` job is enabled with repository variable `DEEPLOOK_BROWSER_CI_ENABLED=true`. Public recursive checkout uses the default workflow token; a private engine access token is not required. Keep this job enabled for release validation; a skipped job is not evidence that the browser integration passed.
+The CI `browser-integration` job runs on every push and pull request, alongside the deterministic `api` job. It checks out the pinned public browser submodule, installs Chrome, and runs both `npm run test:browser` and `npm run test:container`. No `DEEPLOOK_BROWSER_CI_ENABLED` variable or private engine access token is required. For release validation, confirm both jobs passed for the exact commit being released; a skipped job is not evidence that the browser integration passed.
 
 ## Stopping and updating the service
 
